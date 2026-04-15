@@ -3,8 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Histogram Czasów Realizacji</title>
+  <title>Dashboard Przepływu Pracy</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -16,10 +17,36 @@
       min-height: 100vh;
     }
 
-    header { margin-bottom: 24px; }
+    header { margin-bottom: 20px; }
     header h1 { font-size: 1.55rem; font-weight: 700; color: #1a2233; }
-    header p { font-size: 0.9rem; color: #6b7280; margin-top: 4px; }
+    header p  { font-size: 0.9rem; color: #6b7280; margin-top: 4px; }
 
+    /* ── Tabs ── */
+    .tabs {
+      display: flex;
+      gap: 2px;
+      margin-bottom: 20px;
+      border-bottom: 2px solid #e5e7eb;
+    }
+    .tab-btn {
+      padding: 10px 22px;
+      background: none;
+      border: none;
+      border-bottom: 3px solid transparent;
+      margin-bottom: -2px;
+      cursor: pointer;
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: #6b7280;
+      transition: color 0.15s;
+    }
+    .tab-btn:hover  { color: #1a2233; }
+    .tab-btn.active { color: #4f46e5; border-bottom-color: #4f46e5; }
+
+    .view        { display: none; }
+    .view.active { display: block; }
+
+    /* ── Card layout ── */
     .card {
       background: #fff;
       border-radius: 14px;
@@ -29,14 +56,12 @@
       gap: 28px;
       align-items: flex-start;
     }
-
     .chart-wrap {
       flex: 1;
       min-width: 0;
       position: relative;
       height: 440px;
     }
-
     .sidebar {
       width: 190px;
       flex-shrink: 0;
@@ -45,6 +70,7 @@
       gap: 22px;
     }
 
+    /* ── Sidebar components ── */
     .section-title {
       font-size: 0.72rem;
       font-weight: 700;
@@ -53,7 +79,6 @@
       color: #9ca3af;
       margin-bottom: 10px;
     }
-
     .legend-row {
       display: flex;
       align-items: center;
@@ -74,7 +99,6 @@
       color: #9ca3af;
       font-weight: 600;
     }
-
     .ctrl-row {
       display: flex;
       align-items: center;
@@ -92,7 +116,6 @@
       accent-color: #4f46e5;
     }
     .ctrl-dash { width: 22px; flex-shrink: 0; }
-
     .stat-row {
       display: flex;
       justify-content: space-between;
@@ -103,128 +126,278 @@
     .stat-row:last-child { border-bottom: none; }
     .stat-label { color: #6b7280; }
     .stat-val   { font-weight: 700; color: #1a2233; }
-
-    hr.divider { border: none; border-top: 1px solid #f3f4f6; }
+    hr.divider  { border: none; border-top: 1px solid #f3f4f6; }
   </style>
 </head>
 <body>
 
 <header>
-  <h1>Histogram Czasów Realizacji</h1>
-  <p>Rozkład czasu realizacji według zadeklarowanego rozmiaru zadania</p>
+  <h1>Dashboard Przepływu Pracy</h1>
+  <p>Analiza czasów realizacji i tempa dostarczania zadań</p>
 </header>
 
-<div class="card">
-  <div class="chart-wrap">
-    <canvas id="chart"></canvas>
+<nav class="tabs">
+  <button class="tab-btn active" data-tab="histogram"  onclick="showTab('histogram')">Histogram</button>
+  <button class="tab-btn"        data-tab="scatterplot" onclick="showTab('scatterplot')">Scatterplot</button>
+  <button class="tab-btn"        data-tab="pcb"         onclick="showTab('pcb')">Wykres Przebiegu</button>
+  <button class="tab-btn"        data-tab="throughput"  onclick="showTab('throughput')">Tempo Dostarczania</button>
+</nav>
+
+<!-- ══════════════════════════ HISTOGRAM ══════════════════════════ -->
+<div id="view-histogram" class="view active">
+  <div class="card">
+    <div class="chart-wrap"><canvas id="chart-histogram"></canvas></div>
+    <div class="sidebar">
+      <div>
+        <div class="section-title">Rozmiar</div>
+        <div class="legend-row">
+          <div class="legend-swatch" style="background:#4e9af1;"></div>S – Mały
+          <span class="legend-count" id="h-cnt-s">–</span>
+        </div>
+        <div class="legend-row">
+          <div class="legend-swatch" style="background:#f5a623;"></div>M – Średni
+          <span class="legend-count" id="h-cnt-m">–</span>
+        </div>
+        <div class="legend-row">
+          <div class="legend-swatch" style="background:#e8644d;"></div>L – Duży
+          <span class="legend-count" id="h-cnt-l">–</span>
+        </div>
+      </div>
+      <hr class="divider">
+      <div>
+        <div class="section-title">Linie statystyczne</div>
+        <label class="ctrl-row">
+          <input type="checkbox" id="h-chk-avg" checked>
+          <svg class="ctrl-dash" height="4"><line x1="0" y1="2" x2="22" y2="2" stroke="#2ecc71" stroke-width="2.5"/></svg>
+          Średnia
+        </label>
+        <label class="ctrl-row">
+          <input type="checkbox" id="h-chk-p50" checked>
+          <svg class="ctrl-dash" height="4"><line x1="0" y1="2" x2="22" y2="2" stroke="#3498db" stroke-width="2.5" stroke-dasharray="4 3"/></svg>
+          P50 (Mediana)
+        </label>
+        <label class="ctrl-row">
+          <input type="checkbox" id="h-chk-p85">
+          <svg class="ctrl-dash" height="4"><line x1="0" y1="2" x2="22" y2="2" stroke="#e67e22" stroke-width="2.5"/></svg>
+          P85
+        </label>
+        <label class="ctrl-row">
+          <input type="checkbox" id="h-chk-p95">
+          <svg class="ctrl-dash" height="4"><line x1="0" y1="2" x2="22" y2="2" stroke="#e74c3c" stroke-width="2.5"/></svg>
+          P95
+        </label>
+      </div>
+      <hr class="divider">
+      <div>
+        <div class="section-title">Statystyki (dni)</div>
+        <div class="stat-row"><span class="stat-label">Średnia</span><span class="stat-val" id="h-val-avg">–</span></div>
+        <div class="stat-row"><span class="stat-label">P50</span>    <span class="stat-val" id="h-val-p50">–</span></div>
+        <div class="stat-row"><span class="stat-label">P85</span>    <span class="stat-val" id="h-val-p85">–</span></div>
+        <div class="stat-row"><span class="stat-label">P95</span>    <span class="stat-val" id="h-val-p95">–</span></div>
+        <div class="stat-row"><span class="stat-label">Min</span>    <span class="stat-val" id="h-val-min">–</span></div>
+        <div class="stat-row"><span class="stat-label">Max</span>    <span class="stat-val" id="h-val-max">–</span></div>
+        <div class="stat-row"><span class="stat-label">Liczba</span> <span class="stat-val" id="h-val-n">–</span></div>
+      </div>
+    </div>
   </div>
+</div>
 
-  <div class="sidebar">
-
-    <div>
-      <div class="section-title">Rozmiar</div>
-      <div class="legend-row">
-        <div class="legend-swatch" style="background:#4e9af1;"></div>
-        S – Mały
-        <span class="legend-count" id="cnt-s">–</span>
+<!-- ══════════════════════════ SCATTERPLOT ══════════════════════════ -->
+<div id="view-scatterplot" class="view">
+  <div class="card">
+    <div class="chart-wrap"><canvas id="chart-scatterplot"></canvas></div>
+    <div class="sidebar">
+      <div>
+        <div class="section-title">Rozmiar</div>
+        <div class="legend-row">
+          <div class="legend-swatch" style="background:#4e9af1;"></div>S – Mały
+          <span class="legend-count" id="sc-cnt-s">–</span>
+        </div>
+        <div class="legend-row">
+          <div class="legend-swatch" style="background:#f5a623;"></div>M – Średni
+          <span class="legend-count" id="sc-cnt-m">–</span>
+        </div>
+        <div class="legend-row">
+          <div class="legend-swatch" style="background:#e8644d;"></div>L – Duży
+          <span class="legend-count" id="sc-cnt-l">–</span>
+        </div>
       </div>
-      <div class="legend-row">
-        <div class="legend-swatch" style="background:#f5a623;"></div>
-        M – Średni
-        <span class="legend-count" id="cnt-m">–</span>
+      <hr class="divider">
+      <div>
+        <div class="section-title">Linie statystyczne</div>
+        <label class="ctrl-row">
+          <input type="checkbox" id="sc-chk-avg" checked>
+          <svg class="ctrl-dash" height="4"><line x1="0" y1="2" x2="22" y2="2" stroke="#2ecc71" stroke-width="2.5"/></svg>
+          Średnia
+        </label>
+        <label class="ctrl-row">
+          <input type="checkbox" id="sc-chk-p50" checked>
+          <svg class="ctrl-dash" height="4"><line x1="0" y1="2" x2="22" y2="2" stroke="#3498db" stroke-width="2.5" stroke-dasharray="4 3"/></svg>
+          P50 (Mediana)
+        </label>
+        <label class="ctrl-row">
+          <input type="checkbox" id="sc-chk-p85">
+          <svg class="ctrl-dash" height="4"><line x1="0" y1="2" x2="22" y2="2" stroke="#e67e22" stroke-width="2.5"/></svg>
+          P85
+        </label>
+        <label class="ctrl-row">
+          <input type="checkbox" id="sc-chk-p95">
+          <svg class="ctrl-dash" height="4"><line x1="0" y1="2" x2="22" y2="2" stroke="#e74c3c" stroke-width="2.5"/></svg>
+          P95
+        </label>
       </div>
-      <div class="legend-row">
-        <div class="legend-swatch" style="background:#e8644d;"></div>
-        L – Duży
-        <span class="legend-count" id="cnt-l">–</span>
+      <hr class="divider">
+      <div>
+        <div class="section-title">Statystyki (dni)</div>
+        <div class="stat-row"><span class="stat-label">Średnia</span><span class="stat-val" id="sc-val-avg">–</span></div>
+        <div class="stat-row"><span class="stat-label">P50</span>    <span class="stat-val" id="sc-val-p50">–</span></div>
+        <div class="stat-row"><span class="stat-label">P85</span>    <span class="stat-val" id="sc-val-p85">–</span></div>
+        <div class="stat-row"><span class="stat-label">P95</span>    <span class="stat-val" id="sc-val-p95">–</span></div>
+        <div class="stat-row"><span class="stat-label">Min</span>    <span class="stat-val" id="sc-val-min">–</span></div>
+        <div class="stat-row"><span class="stat-label">Max</span>    <span class="stat-val" id="sc-val-max">–</span></div>
+        <div class="stat-row"><span class="stat-label">Liczba</span> <span class="stat-val" id="sc-val-n">–</span></div>
       </div>
     </div>
+  </div>
+</div>
 
-    <hr class="divider">
-
-    <div>
-      <div class="section-title">Linie statystyczne</div>
-
-      <label class="ctrl-row">
-        <input type="checkbox" id="chk-avg" checked>
-        <svg class="ctrl-dash" height="4"><line x1="0" y1="2" x2="22" y2="2" stroke="#2ecc71" stroke-width="2.5"/></svg>
-        Średnia
-      </label>
-
-      <label class="ctrl-row">
-        <input type="checkbox" id="chk-p50" checked>
-        <svg class="ctrl-dash" height="4"><line x1="0" y1="2" x2="22" y2="2" stroke="#3498db" stroke-width="2.5" stroke-dasharray="4 3"/></svg>
-        P50 (Mediana)
-      </label>
-
-      <label class="ctrl-row">
-        <input type="checkbox" id="chk-p85">
-        <svg class="ctrl-dash" height="4"><line x1="0" y1="2" x2="22" y2="2" stroke="#e67e22" stroke-width="2.5"/></svg>
-        P85
-      </label>
-
-      <label class="ctrl-row">
-        <input type="checkbox" id="chk-p95">
-        <svg class="ctrl-dash" height="4"><line x1="0" y1="2" x2="22" y2="2" stroke="#e74c3c" stroke-width="2.5"/></svg>
-        P95
-      </label>
+<!-- ══════════════════════════ PCB / RUN CHART ══════════════════════════ -->
+<div id="view-pcb" class="view">
+  <div class="card">
+    <div class="chart-wrap"><canvas id="chart-pcb"></canvas></div>
+    <div class="sidebar">
+      <div>
+        <div class="section-title">Linie kontrolne</div>
+        <label class="ctrl-row">
+          <input type="checkbox" id="pcb-chk-avg" checked>
+          <svg class="ctrl-dash" height="4"><line x1="0" y1="2" x2="22" y2="2" stroke="#2ecc71" stroke-width="2.5"/></svg>
+          Średnia
+        </label>
+        <label class="ctrl-row">
+          <input type="checkbox" id="pcb-chk-ucl" checked>
+          <svg class="ctrl-dash" height="4"><line x1="0" y1="2" x2="22" y2="2" stroke="#e74c3c" stroke-width="2.5"/></svg>
+          UCL (Śr.+3σ)
+        </label>
+        <label class="ctrl-row">
+          <input type="checkbox" id="pcb-chk-p85">
+          <svg class="ctrl-dash" height="4"><line x1="0" y1="2" x2="22" y2="2" stroke="#e67e22" stroke-width="2.5"/></svg>
+          P85
+        </label>
+        <label class="ctrl-row">
+          <input type="checkbox" id="pcb-chk-p95">
+          <svg class="ctrl-dash" height="4"><line x1="0" y1="2" x2="22" y2="2" stroke="#9b59b6" stroke-width="2.5"/></svg>
+          P95
+        </label>
+      </div>
+      <hr class="divider">
+      <div>
+        <div class="section-title">Statystyki (dni)</div>
+        <div class="stat-row"><span class="stat-label">Średnia</span><span class="stat-val" id="pcb-val-avg">–</span></div>
+        <div class="stat-row"><span class="stat-label">UCL</span>    <span class="stat-val" id="pcb-val-ucl">–</span></div>
+        <div class="stat-row"><span class="stat-label">P85</span>    <span class="stat-val" id="pcb-val-p85">–</span></div>
+        <div class="stat-row"><span class="stat-label">P95</span>    <span class="stat-val" id="pcb-val-p95">–</span></div>
+        <div class="stat-row"><span class="stat-label">Min</span>    <span class="stat-val" id="pcb-val-min">–</span></div>
+        <div class="stat-row"><span class="stat-label">Max</span>    <span class="stat-val" id="pcb-val-max">–</span></div>
+        <div class="stat-row"><span class="stat-label">Liczba</span> <span class="stat-val" id="pcb-val-n">–</span></div>
+      </div>
     </div>
+  </div>
+</div>
 
-    <hr class="divider">
-
-    <div>
-      <div class="section-title">Statystyki (dni)</div>
-      <div class="stat-row"><span class="stat-label">Średnia</span><span class="stat-val" id="val-avg">–</span></div>
-      <div class="stat-row"><span class="stat-label">P50</span>    <span class="stat-val" id="val-p50">–</span></div>
-      <div class="stat-row"><span class="stat-label">P85</span>    <span class="stat-val" id="val-p85">–</span></div>
-      <div class="stat-row"><span class="stat-label">P95</span>    <span class="stat-val" id="val-p95">–</span></div>
-      <div class="stat-row"><span class="stat-label">Min</span>    <span class="stat-val" id="val-min">–</span></div>
-      <div class="stat-row"><span class="stat-label">Max</span>    <span class="stat-val" id="val-max">–</span></div>
-      <div class="stat-row"><span class="stat-label">Liczba</span> <span class="stat-val" id="val-n">–</span></div>
+<!-- ══════════════════════════ THROUGHPUT ══════════════════════════ -->
+<div id="view-throughput" class="view">
+  <div class="card">
+    <div class="chart-wrap"><canvas id="chart-throughput"></canvas></div>
+    <div class="sidebar">
+      <div>
+        <div class="section-title">Linie statystyczne</div>
+        <label class="ctrl-row">
+          <input type="checkbox" id="tp-chk-avg" checked>
+          <svg class="ctrl-dash" height="4"><line x1="0" y1="2" x2="22" y2="2" stroke="#2ecc71" stroke-width="2.5"/></svg>
+          Średnia/dzień
+        </label>
+      </div>
+      <hr class="divider">
+      <div>
+        <div class="section-title">Statystyki</div>
+        <div class="stat-row"><span class="stat-label">Łącznie</span>      <span class="stat-val" id="tp-val-total">–</span></div>
+        <div class="stat-row"><span class="stat-label">Śr./dzień</span>    <span class="stat-val" id="tp-val-avg">–</span></div>
+        <div class="stat-row"><span class="stat-label">Maks/dzień</span>   <span class="stat-val" id="tp-val-max">–</span></div>
+        <div class="stat-row"><span class="stat-label">Dni robocze</span>  <span class="stat-val" id="tp-val-working">–</span></div>
+        <div class="stat-row"><span class="stat-label">Wszystkie dni</span><span class="stat-val" id="tp-val-days">–</span></div>
+      </div>
     </div>
-
   </div>
 </div>
 
 <script>
-const raw = [
-  {s:'S',v:49},{s:'S',v:48},{s:'S',v:87},
-  {s:'M',v:57},{s:'M',v:148},{s:'S',v:53},
-  {s:'S',v:45},{s:'M',v:145},{s:'L',v:105},
-  {s:'S',v:5},{s:'L',v:163},{s:'S',v:43},
-  {s:'M',v:415},{s:'L',v:123},{s:'M',v:103},
-  {s:'L',v:104},{s:'L',v:302},{s:'L',v:158},
-  {s:'L',v:98},{s:'S',v:52},{s:'M',v:95},
-  {s:'S',v:70},{s:'M',v:95},{s:'M',v:101},
-  {s:'M',v:57},{s:'M',v:57},{s:'S',v:53},
-  {s:'L',v:137},{s:'S',v:73},{s:'M',v:60},
-  {s:'S',v:126},{s:'M',v:57},{s:'L',v:124},
-  {s:'M',v:75},{s:'M',v:89},{s:'S',v:44},
+// ══════════════════════════════════════════════════════════════════════
+// DATA
+// ══════════════════════════════════════════════════════════════════════
+
+/* CSV 1 + 2: size and cycle time (with completion dates for scatterplot) */
+const rawScatter = [
+  {d:'15.07.2024',s:'S',v:49}, {d:'22.08.2024',s:'S',v:48}, {d:'10.09.2024',s:'S',v:87},
+  {d:'25.09.2024',s:'M',v:57}, {d:'5.10.2024', s:'M',v:148},{d:'14.10.2024',s:'S',v:53},
+  {d:'28.10.2024',s:'S',v:45}, {d:'18.11.2024',s:'M',v:145},{d:'4.12.2024', s:'L',v:105},
+  {d:'8.01.2025', s:'S',v:5},  {d:'20.01.2025',s:'L',v:163},{d:'14.02.2025',s:'S',v:43},
+  {d:'26.02.2025',s:'M',v:415},{d:'15.03.2025',s:'L',v:123},{d:'10.04.2025',s:'M',v:103},
+  {d:'5.05.2025', s:'L',v:104},{d:'12.06.2025',s:'L',v:302},{d:'25.06.2025',s:'L',v:158},
+  {d:'2.07.2025', s:'L',v:98}, {d:'11.07.2025',s:'S',v:52}, {d:'18.07.2025',s:'M',v:95},
+  {d:'29.07.2025',s:'S',v:70}, {d:'3.08.2025', s:'M',v:95}, {d:'14.08.2025',s:'M',v:101},
+  {d:'21.08.2025',s:'M',v:57}, {d:'29.08.2025',s:'M',v:57}, {d:'8.09.2025', s:'S',v:53},
+  {d:'22.09.2025',s:'L',v:137},{d:'4.10.2025', s:'S',v:73}, {d:'12.10.2025',s:'M',v:60},
+  {d:'19.10.2025',s:'S',v:126},{d:'27.10.2025',s:'M',v:57}, {d:'5.11.2025', s:'L',v:124},
+  {d:'15.11.2025',s:'M',v:75}, {d:'25.11.2025',s:'M',v:89}, {d:'10.12.2025',s:'S',v:44},
 ];
 
-const BIN      = 25;
-const allVals  = raw.map(d => d.v);
-const minV     = Math.min(...allVals);
-const maxV     = Math.max(...allVals);
-const binStart = Math.floor(minV / BIN) * BIN;
-const numBins  = Math.ceil((maxV - binStart) / BIN);
+/* CSV 3: PCB run chart – closed dates in M.D.YYYY */
+const rawPCB = [
+  {closed:'1.5.2024',  ct:38},{closed:'1.11.2024', ct:24},{closed:'1.16.2024', ct:14},
+  {closed:'1.17.2024', ct:9}, {closed:'1.22.2024', ct:4}, {closed:'1.26.2024', ct:25},
+  {closed:'1.29.2024', ct:19},{closed:'2.6.2024',  ct:51},{closed:'2.12.2024', ct:48},
+  {closed:'2.15.2024', ct:15},{closed:'2.17.2024', ct:22},{closed:'2.18.2024', ct:42},
+  {closed:'2.19.2024', ct:17},{closed:'2.21.2024', ct:7}, {closed:'2.28.2024', ct:5},
+  {closed:'3.12.2024', ct:20},{closed:'3.14.2024', ct:63},{closed:'3.19.2024', ct:6},
+  {closed:'3.20.2024', ct:56},{closed:'3.22.2024', ct:24},{closed:'3.22.2024', ct:22},
+  {closed:'3.26.2024', ct:50},{closed:'3.27.2024', ct:8}, {closed:'3.28.2024', ct:2},
+  {closed:'3.29.2024', ct:3}, {closed:'3.30.2024', ct:8}, {closed:'4.1.2024',  ct:36},
+  {closed:'4.2.2024',  ct:27},{closed:'4.9.2024',  ct:29},{closed:'4.9.2024',  ct:20},
+];
 
-const bins = Array.from({length: numBins}, (_, i) => ({
-  lo: binStart + i * BIN,
-  hi: binStart + (i + 1) * BIN,
-  S: 0, M: 0, L: 0,
-}));
+/* CSV 4: daily throughput – dates in DD.MM.YYYY */
+const rawThroughput = [
+  {d:'07.01.2025',v:0}, {d:'08.01.2025',v:2}, {d:'09.01.2025',v:10},{d:'10.01.2025',v:3},
+  {d:'11.01.2025',v:0}, {d:'12.01.2025',v:0}, {d:'13.01.2025',v:2}, {d:'14.01.2025',v:3},
+  {d:'15.01.2025',v:7}, {d:'16.01.2025',v:0}, {d:'17.01.2025',v:0}, {d:'18.01.2025',v:0},
+  {d:'19.01.2025',v:0}, {d:'20.01.2025',v:5}, {d:'21.01.2025',v:2}, {d:'22.01.2025',v:0},
+  {d:'23.01.2025',v:0}, {d:'24.01.2025',v:0}, {d:'25.01.2025',v:0}, {d:'26.01.2025',v:0},
+  {d:'27.01.2025',v:1}, {d:'28.01.2025',v:1}, {d:'29.01.2025',v:0}, {d:'30.01.2025',v:5},
+  {d:'31.01.2025',v:4}, {d:'01.02.2025',v:0}, {d:'02.02.2025',v:0}, {d:'03.02.2025',v:7},
+  {d:'04.02.2025',v:0}, {d:'05.02.2025',v:2}, {d:'06.02.2025',v:2}, {d:'07.02.2025',v:12},
+  {d:'08.02.2025',v:0}, {d:'09.02.2025',v:0}, {d:'10.02.2025',v:1}, {d:'11.02.2025',v:0},
+  {d:'12.02.2025',v:0}, {d:'13.02.2025',v:2}, {d:'14.02.2025',v:12},{d:'15.02.2025',v:0},
+  {d:'16.02.2025',v:0}, {d:'17.02.2025',v:1}, {d:'18.02.2025',v:0}, {d:'19.02.2025',v:0},
+  {d:'20.02.2025',v:3}, {d:'21.02.2025',v:11},{d:'22.02.2025',v:0}, {d:'23.02.2025',v:0},
+  {d:'24.02.2025',v:6}, {d:'25.02.2025',v:0}, {d:'26.02.2025',v:0}, {d:'27.02.2025',v:6},
+  {d:'28.02.2025',v:7}, {d:'01.03.2025',v:0}, {d:'02.03.2025',v:0}, {d:'03.03.2025',v:2},
+  {d:'04.03.2025',v:0}, {d:'05.03.2025',v:0}, {d:'06.03.2025',v:3}, {d:'07.03.2025',v:5},
+  {d:'08.03.2025',v:0}, {d:'09.03.2025',v:0}, {d:'10.03.2025',v:1}, {d:'11.03.2025',v:0},
+  {d:'12.03.2025',v:0}, {d:'13.03.2025',v:9}, {d:'14.03.2025',v:7}, {d:'15.03.2025',v:0},
+  {d:'16.03.2025',v:0}, {d:'17.03.2025',v:3}, {d:'18.03.2025',v:0}, {d:'19.03.2025',v:0},
+  {d:'20.03.2025',v:4}, {d:'21.03.2025',v:10},{d:'22.03.2025',v:0}, {d:'23.03.2025',v:0},
+  {d:'24.03.2025',v:1}, {d:'25.03.2025',v:0}, {d:'26.03.2025',v:0}, {d:'27.03.2025',v:5},
+  {d:'28.03.2025',v:1}, {d:'29.03.2025',v:0}, {d:'30.03.2025',v:0}, {d:'31.03.2025',v:2},
+  {d:'01.04.2025',v:0}, {d:'02.04.2025',v:0}, {d:'03.04.2025',v:2}, {d:'04.04.2025',v:11},
+  {d:'05.04.2025',v:0}, {d:'06.04.2025',v:0}, {d:'07.04.2025',v:1}, {d:'08.04.2025',v:0},
+  {d:'09.04.2025',v:0}, {d:'10.04.2025',v:5}, {d:'11.04.2025',v:2}, {d:'12.04.2025',v:0},
+  {d:'13.04.2025',v:0}, {d:'14.04.2025',v:1}, {d:'15.04.2025',v:0}, {d:'16.04.2025',v:0},
+  {d:'17.04.2025',v:4}, {d:'18.04.2025',v:7},
+];
 
-raw.forEach(d => {
-  const idx = Math.min(Math.floor((d.v - binStart) / BIN), numBins - 1);
-  bins[idx][d.s]++;
-});
-
-const labels = bins.map(b => b.lo + '\u2013' + (b.hi - 1));
-
-/* statistics */
-const sorted = [...allVals].sort((a, b) => a - b);
-const N = sorted.length;
+// ══════════════════════════════════════════════════════════════════════
+// UTILITIES
+// ══════════════════════════════════════════════════════════════════════
 
 function pct(arr, p) {
   const idx = (p / 100) * (arr.length - 1);
@@ -232,176 +405,501 @@ function pct(arr, p) {
   return lo === hi ? arr[lo] : arr[lo] + (arr[hi] - arr[lo]) * (idx - lo);
 }
 
-const avg = allVals.reduce((s, v) => s + v, 0) / N;
-const p50 = pct(sorted, 50);
-const p85 = pct(sorted, 85);
-const p95 = pct(sorted, 95);
-
-const cntS = raw.filter(d => d.s === 'S').length;
-const cntM = raw.filter(d => d.s === 'M').length;
-const cntL = raw.filter(d => d.s === 'L').length;
-
-document.getElementById('cnt-s').textContent = cntS;
-document.getElementById('cnt-m').textContent = cntM;
-document.getElementById('cnt-l').textContent = cntL;
-document.getElementById('val-avg').textContent = avg.toFixed(1);
-document.getElementById('val-p50').textContent = p50.toFixed(1);
-document.getElementById('val-p85').textContent = p85.toFixed(1);
-document.getElementById('val-p95').textContent = p95.toFixed(1);
-document.getElementById('val-min').textContent = minV;
-document.getElementById('val-max').textContent = maxV;
-document.getElementById('val-n').textContent  = N;
-
-/* stat lines */
-const LINES = [
-  {id:'avg', label:'Sr.',  value:avg, color:'#2ecc71', dash:[]     },
-  {id:'p50', label:'P50',  value:p50, color:'#3498db', dash:[5,4]  },
-  {id:'p85', label:'P85',  value:p85, color:'#e67e22', dash:[]     },
-  {id:'p95', label:'P95',  value:p95, color:'#e74c3c', dash:[]     },
-];
-
-function isChecked(id) { return document.getElementById('chk-' + id).checked; }
-
-/* convert cycle-time value to x pixel on categorical chart scale */
-function ctToXPx(xScale, value) {
-  const frac = (value - binStart) / BIN;
-  const lo   = Math.floor(frac);
-  const safeHi = Math.min(lo + 1, numBins - 1);
-  const t    = frac - lo;
-
-  const pxLo = xScale.getPixelForValue(lo);
-  const pxHi = xScale.getPixelForValue(safeHi);
-
-  const step = lo < numBins - 1
-    ? pxHi - pxLo
-    : pxLo - xScale.getPixelForValue(Math.max(lo - 1, 0));
-
-  return pxLo + (t - 0.5) * step;
+function calcStats(values) {
+  const sorted = [...values].sort((a, b) => a - b);
+  const n   = sorted.length;
+  const avg = values.reduce((s, v) => s + v, 0) / n;
+  return { avg, n, p50: pct(sorted,50), p85: pct(sorted,85), p95: pct(sorted,95), min: sorted[0], max: sorted[n-1] };
 }
 
-/* plugin: draw vertical stat lines */
-const statLinesPlugin = {
-  id: 'statLines',
-  afterDraw(chart) {
-    const ctx    = chart.ctx;
-    const xScale = chart.scales.x;
-    const yScale = chart.scales.y;
+/* DD.MM.YYYY → Date */
+function parseDDMMYYYY(str) {
+  const [d, m, y] = str.split('.');
+  return new Date(+y, +m - 1, +d);
+}
 
-    const visible = LINES
-      .filter(l => isChecked(l.id))
-      .map(l => ({...l, xPx: ctToXPx(xScale, l.value)}))
-      .sort((a, b) => a.xPx - b.xPx);
+/* M.D.YYYY (PCB closed dates) → Date */
+function parseMDYYYY(str) {
+  const [m, d, y] = str.split('.');
+  return new Date(+y, +m - 1, +d);
+}
 
-    /* assign label rows to avoid horizontal overlap */
-    const ROW_H  = 20;
-    const MIN_GAP = 60;
-    const rowLastX = [];
-    visible.forEach(line => {
-      let row = 0;
-      while (rowLastX[row] !== undefined && line.xPx - rowLastX[row] < MIN_GAP) row++;
-      rowLastX[row] = line.xPx;
-      line.labelRow = row;
-    });
+/* Draw a rounded-rect badge on canvas */
+function drawBadge(ctx, text, cx, cy, color) {
+  ctx.font = 'bold 11px "Segoe UI", sans-serif';
+  const tw  = ctx.measureText(text).width;
+  const pad = 5, r = 4, bw = tw + pad * 2, bh = 18;
+  const bx  = cx - bw / 2, by = cy - bh / 2;
+  ctx.beginPath();
+  ctx.moveTo(bx + r, by);
+  ctx.lineTo(bx + bw - r, by);
+  ctx.quadraticCurveTo(bx + bw, by, bx + bw, by + r);
+  ctx.lineTo(bx + bw, by + bh - r);
+  ctx.quadraticCurveTo(bx + bw, by + bh, bx + bw - r, by + bh);
+  ctx.lineTo(bx + r, by + bh);
+  ctx.quadraticCurveTo(bx, by + bh, bx, by + bh - r);
+  ctx.lineTo(bx, by + r);
+  ctx.quadraticCurveTo(bx, by, bx + r, by);
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.fillStyle    = '#fff';
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, cx, cy);
+}
 
-    visible.forEach(line => {
-      const x = line.xPx;
+/* Build a horizontal-line plugin for scatter/time charts */
+function makeHLinePlugin(pluginId, getLinesFunc) {
+  return {
+    id: pluginId,
+    afterDraw(chart) {
+      const lines = getLinesFunc().filter(l => l.visible);
+      if (!lines.length) return;
+      const ctx    = chart.ctx;
+      const xScale = chart.scales.x;
+      const yScale = chart.scales.y;
 
-      /* vertical line */
-      ctx.save();
-      ctx.beginPath();
-      ctx.strokeStyle = line.color;
-      ctx.lineWidth   = 2;
-      ctx.setLineDash(line.dash);
-      ctx.moveTo(x, yScale.top);
-      ctx.lineTo(x, yScale.bottom);
-      ctx.stroke();
-      ctx.setLineDash([]);
+      /* sort by y-value so overlapping labels can be offset */
+      const visible = lines
+        .map(l => ({...l, yPx: yScale.getPixelForValue(l.value)}))
+        .sort((a, b) => a.yPx - b.yPx);
 
-      /* label badge */
-      const text = line.label + ': ' + Math.round(line.value);
-      ctx.font = 'bold 11px "Segoe UI", sans-serif';
-      const tw = ctx.measureText(text).width;
-      const pad = 5, r = 4;
-      const bw = tw + pad * 2;
-      const bh = ROW_H - 2;
-      const bx = x - bw / 2;
-      const by = yScale.top - 8 - (line.labelRow + 1) * ROW_H;
+      const ROW_H = 20, MIN_GAP = 22;
+      const rowLastY = [];
+      visible.forEach(line => {
+        let row = 0;
+        while (rowLastY[row] !== undefined && Math.abs(line.yPx - rowLastY[row]) < MIN_GAP) row++;
+        rowLastY[row] = line.yPx;
+        line.labelRow = row;
+      });
 
-      ctx.beginPath();
-      ctx.moveTo(bx + r, by);
-      ctx.lineTo(bx + bw - r, by);
-      ctx.quadraticCurveTo(bx + bw, by, bx + bw, by + r);
-      ctx.lineTo(bx + bw, by + bh - r);
-      ctx.quadraticCurveTo(bx + bw, by + bh, bx + bw - r, by + bh);
-      ctx.lineTo(bx + r, by + bh);
-      ctx.quadraticCurveTo(bx, by + bh, bx, by + bh - r);
-      ctx.lineTo(bx, by + r);
-      ctx.quadraticCurveTo(bx, by, bx + r, by);
-      ctx.closePath();
-      ctx.fillStyle = line.color;
-      ctx.fill();
+      visible.forEach(line => {
+        const y = line.yPx;
+        ctx.save();
+        ctx.beginPath();
+        ctx.strokeStyle = line.color;
+        ctx.lineWidth   = 2;
+        ctx.setLineDash(line.dash || []);
+        ctx.moveTo(xScale.left,  y);
+        ctx.lineTo(xScale.right, y);
+        ctx.stroke();
+        ctx.setLineDash([]);
 
-      ctx.fillStyle    = '#fff';
-      ctx.textAlign    = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(text, x, by + bh / 2);
+        const text = line.label + ': ' + Math.round(line.value);
+        const cx   = xScale.right - 55;
+        const cy   = y - 11 - line.labelRow * ROW_H;
+        const clampedCy = Math.max(yScale.top + 9, Math.min(yScale.bottom - 9, cy));
+        drawBadge(ctx, text, cx, clampedCy, line.color);
+        ctx.restore();
+      });
+    },
+  };
+}
 
-      ctx.restore();
-    });
-  },
-};
+// ══════════════════════════════════════════════════════════════════════
+// TAB SYSTEM
+// ══════════════════════════════════════════════════════════════════════
 
-/* chart */
-const theChart = new Chart(document.getElementById('chart').getContext('2d'), {
-  type: 'bar',
-  plugins: [statLinesPlugin],
-  data: {
-    labels,
-    datasets: [
-      {label:'S \u2013 Ma\u0142y',   data:bins.map(b=>b.S), backgroundColor:'#4e9af1', borderRadius:3},
-      {label:'M \u2013 \u015arednii', data:bins.map(b=>b.M), backgroundColor:'#f5a623', borderRadius:3},
-      {label:'L \u2013 Du\u017cy',    data:bins.map(b=>b.L), backgroundColor:'#e8644d', borderRadius:3},
-    ],
-  },
-  options: {
-    responsive: true,
-    maintainAspectRatio: false,
-    layout: {padding: {top: 52, left: 4, right: 4, bottom: 4}},
-    plugins: {
-      legend: {display: false},
-      tooltip: {
-        callbacks: {
-          title: ctx => ctx[0].label + ' dni',
-          label: ctx => ' ' + ctx.dataset.label + ': ' + ctx.parsed.y,
+const chartInstances = {};
+const chartInited    = {};
+
+function showTab(name) {
+  document.querySelectorAll('.tab-btn').forEach(btn =>
+    btn.classList.toggle('active', btn.dataset.tab === name));
+  document.querySelectorAll('.view').forEach(v =>
+    v.classList.toggle('active', v.id === 'view-' + name));
+  if (!chartInited[name]) {
+    chartInited[name] = true;
+    ({histogram: initHistogram, scatterplot: initScatterplot, pcb: initPCB, throughput: initThroughput})[name]();
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// 1. HISTOGRAM
+// ══════════════════════════════════════════════════════════════════════
+
+function initHistogram() {
+  const allVals  = rawScatter.map(d => d.v);
+  const stats    = calcStats(allVals);
+  const BIN      = 25;
+  const minV     = stats.min;
+  const maxV     = stats.max;
+  const binStart = Math.floor(minV / BIN) * BIN;
+  const numBins  = Math.ceil((maxV - binStart) / BIN);
+
+  const bins = Array.from({length: numBins}, (_, i) => ({
+    lo: binStart + i * BIN, hi: binStart + (i + 1) * BIN, S: 0, M: 0, L: 0,
+  }));
+  rawScatter.forEach(d => {
+    const idx = Math.min(Math.floor((d.v - binStart) / BIN), numBins - 1);
+    bins[idx][d.s]++;
+  });
+
+  const labels = bins.map(b => b.lo + '\u2013' + (b.hi - 1));
+
+  document.getElementById('h-cnt-s').textContent   = rawScatter.filter(d => d.s === 'S').length;
+  document.getElementById('h-cnt-m').textContent   = rawScatter.filter(d => d.s === 'M').length;
+  document.getElementById('h-cnt-l').textContent   = rawScatter.filter(d => d.s === 'L').length;
+  document.getElementById('h-val-avg').textContent = stats.avg.toFixed(1);
+  document.getElementById('h-val-p50').textContent = stats.p50.toFixed(1);
+  document.getElementById('h-val-p85').textContent = stats.p85.toFixed(1);
+  document.getElementById('h-val-p95').textContent = stats.p95.toFixed(1);
+  document.getElementById('h-val-min').textContent = stats.min;
+  document.getElementById('h-val-max').textContent = stats.max;
+  document.getElementById('h-val-n').textContent   = stats.n;
+
+  const LINES = [
+    {id:'avg', label:'Śr.', value:stats.avg, color:'#2ecc71', dash:[]   },
+    {id:'p50', label:'P50', value:stats.p50, color:'#3498db', dash:[5,4]},
+    {id:'p85', label:'P85', value:stats.p85, color:'#e67e22', dash:[]   },
+    {id:'p95', label:'P95', value:stats.p95, color:'#e74c3c', dash:[]   },
+  ];
+
+  function ctToXPx(xScale, value) {
+    const frac   = (value - binStart) / BIN;
+    const lo     = Math.floor(frac);
+    const safeHi = Math.min(lo + 1, numBins - 1);
+    const t      = frac - lo;
+    const pxLo   = xScale.getPixelForValue(lo);
+    const pxHi   = xScale.getPixelForValue(safeHi);
+    const step   = lo < numBins - 1
+      ? pxHi - pxLo
+      : pxLo - xScale.getPixelForValue(Math.max(lo - 1, 0));
+    return pxLo + (t - 0.5) * step;
+  }
+
+  const vLinesPlugin = {
+    id: 'hVLines',
+    afterDraw(chart) {
+      const ctx    = chart.ctx;
+      const xScale = chart.scales.x;
+      const yScale = chart.scales.y;
+
+      const visible = LINES
+        .filter(l => document.getElementById('h-chk-' + l.id).checked)
+        .map(l => ({...l, xPx: ctToXPx(xScale, l.value)}))
+        .sort((a, b) => a.xPx - b.xPx);
+
+      const ROW_H = 20, MIN_GAP = 60, rowLastX = [];
+      visible.forEach(line => {
+        let row = 0;
+        while (rowLastX[row] !== undefined && line.xPx - rowLastX[row] < MIN_GAP) row++;
+        rowLastX[row] = line.xPx;
+        line.labelRow = row;
+      });
+
+      visible.forEach(line => {
+        const x = line.xPx;
+        ctx.save();
+        ctx.beginPath();
+        ctx.strokeStyle = line.color;
+        ctx.lineWidth   = 2;
+        ctx.setLineDash(line.dash);
+        ctx.moveTo(x, yScale.top);
+        ctx.lineTo(x, yScale.bottom);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        const text = line.label + ': ' + Math.round(line.value);
+        drawBadge(ctx, text, x, yScale.top - 8 - (line.labelRow + 1) * ROW_H + 9, line.color);
+        ctx.restore();
+      });
+    },
+  };
+
+  chartInstances.histogram = new Chart(
+    document.getElementById('chart-histogram').getContext('2d'), {
+      type: 'bar',
+      plugins: [vLinesPlugin],
+      data: {
+        labels,
+        datasets: [
+          {label:'S \u2013 Ma\u0142y',   data:bins.map(b=>b.S), backgroundColor:'#4e9af1', borderRadius:3},
+          {label:'M \u2013 \u015aredni',  data:bins.map(b=>b.M), backgroundColor:'#f5a623', borderRadius:3},
+          {label:'L \u2013 Du\u017cy',    data:bins.map(b=>b.L), backgroundColor:'#e8644d', borderRadius:3},
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        layout: {padding: {top: 52, left: 4, right: 4, bottom: 4}},
+        plugins: {
+          legend: {display: false},
+          tooltip: {
+            callbacks: {
+              title: ctx => ctx[0].label + ' dni',
+              label: ctx => ' ' + ctx.dataset.label + ': ' + ctx.parsed.y,
+            },
+          },
+        },
+        scales: {
+          x: {
+            stacked: true,
+            grid: {display: false},
+            border: {color: '#e5e7eb'},
+            ticks: {color:'#6b7280', font:{size:11}, maxRotation:45, minRotation:45},
+            title: {display:true, text:'Czas realizacji (dni)', color:'#6b7280', font:{size:12}, padding:{top:6}},
+          },
+          y: {
+            stacked: true,
+            beginAtZero: true,
+            grid: {color:'#f3f4f6'},
+            border: {dash:[3,3], color:'#e5e7eb'},
+            ticks: {color:'#6b7280', font:{size:11}, stepSize:1},
+            title: {display:true, text:'Liczba zada\u0144', color:'#6b7280', font:{size:12}, padding:{bottom:6}},
+          },
         },
       },
-    },
-    scales: {
-      x: {
-        stacked: true,
-        grid: {display: false},
-        border: {color: '#e5e7eb'},
-        ticks: {color:'#6b7280', font:{size:11}, maxRotation:45, minRotation:45},
-        title: {display:true, text:'Czas realizacji (dni)', color:'#6b7280', font:{size:12}, padding:{top:6}},
-      },
-      y: {
-        stacked: true,
-        beginAtZero: true,
-        grid: {color:'#f3f4f6'},
-        border: {dash:[3,3], color:'#e5e7eb'},
-        ticks: {color:'#6b7280', font:{size:11}, stepSize:1},
-        title: {display:true, text:'Liczba zada\u0144', color:'#6b7280', font:{size:12}, padding:{bottom:6}},
-      },
-    },
-  },
-});
+    });
 
-['avg','p50','p85','p95'].forEach(id => {
-  document.getElementById('chk-' + id).addEventListener('change', () => {
-    /* trigger a re-render via a no-op dataset update */
-    theChart.update();
-  });
-});
+  ['avg','p50','p85','p95'].forEach(id =>
+    document.getElementById('h-chk-' + id).addEventListener('change', () =>
+      chartInstances.histogram.update()));
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// 2. SCATTERPLOT
+// ══════════════════════════════════════════════════════════════════════
+
+function initScatterplot() {
+  const stats = calcStats(rawScatter.map(d => d.v));
+
+  document.getElementById('sc-cnt-s').textContent   = rawScatter.filter(d => d.s === 'S').length;
+  document.getElementById('sc-cnt-m').textContent   = rawScatter.filter(d => d.s === 'M').length;
+  document.getElementById('sc-cnt-l').textContent   = rawScatter.filter(d => d.s === 'L').length;
+  document.getElementById('sc-val-avg').textContent = stats.avg.toFixed(1);
+  document.getElementById('sc-val-p50').textContent = stats.p50.toFixed(1);
+  document.getElementById('sc-val-p85').textContent = stats.p85.toFixed(1);
+  document.getElementById('sc-val-p95').textContent = stats.p95.toFixed(1);
+  document.getElementById('sc-val-min').textContent = stats.min;
+  document.getElementById('sc-val-max').textContent = stats.max;
+  document.getElementById('sc-val-n').textContent   = stats.n;
+
+  const LINES = [
+    {id:'avg', label:'Śr.', value:stats.avg, color:'#2ecc71', dash:[]   },
+    {id:'p50', label:'P50', value:stats.p50, color:'#3498db', dash:[5,4]},
+    {id:'p85', label:'P85', value:stats.p85, color:'#e67e22', dash:[]   },
+    {id:'p95', label:'P95', value:stats.p95, color:'#e74c3c', dash:[]   },
+  ];
+
+  const scHLines = makeHLinePlugin('scHLines', () =>
+    LINES.map(l => ({...l, visible: document.getElementById('sc-chk-' + l.id).checked})));
+
+  const toPoint = d => ({x: parseDDMMYYYY(d.d).getTime(), y: d.v});
+
+  chartInstances.scatterplot = new Chart(
+    document.getElementById('chart-scatterplot').getContext('2d'), {
+      type: 'scatter',
+      plugins: [scHLines],
+      data: {
+        datasets: [
+          {label:'S \u2013 Ma\u0142y',   data:rawScatter.filter(d=>d.s==='S').map(toPoint), backgroundColor:'#4e9af1', pointRadius:6, pointHoverRadius:8},
+          {label:'M \u2013 \u015aredni',  data:rawScatter.filter(d=>d.s==='M').map(toPoint), backgroundColor:'#f5a623', pointRadius:6, pointHoverRadius:8},
+          {label:'L \u2013 Du\u017cy',    data:rawScatter.filter(d=>d.s==='L').map(toPoint), backgroundColor:'#e8644d', pointRadius:6, pointHoverRadius:8},
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        layout: {padding: {top: 12, right: 4, left: 4, bottom: 4}},
+        plugins: {
+          legend: {display: false},
+          tooltip: {
+            callbacks: {
+              label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y} dni`,
+            },
+          },
+        },
+        scales: {
+          x: {
+            type: 'time',
+            time: {unit:'month', tooltipFormat:'dd.MM.yyyy', displayFormats:{month:'MMM yyyy'}},
+            grid: {color:'#f3f4f6'},
+            border: {color:'#e5e7eb'},
+            ticks: {color:'#6b7280', font:{size:11}, maxRotation:30},
+            title: {display:true, text:'Data uko\u0144czenia', color:'#6b7280', font:{size:12}, padding:{top:6}},
+          },
+          y: {
+            beginAtZero: true,
+            grid: {color:'#f3f4f6'},
+            border: {dash:[3,3], color:'#e5e7eb'},
+            ticks: {color:'#6b7280', font:{size:11}},
+            title: {display:true, text:'Czas realizacji (dni)', color:'#6b7280', font:{size:12}, padding:{bottom:6}},
+          },
+        },
+      },
+    });
+
+  ['avg','p50','p85','p95'].forEach(id =>
+    document.getElementById('sc-chk-' + id).addEventListener('change', () =>
+      chartInstances.scatterplot.update()));
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// 3. PCB – PROCESS CONTROL CHART (RUN CHART)
+// ══════════════════════════════════════════════════════════════════════
+
+function initPCB() {
+  const cts    = rawPCB.map(d => d.ct);
+  const stats  = calcStats(cts);
+  const mean   = stats.avg;
+  const sigma  = Math.sqrt(cts.reduce((s, v) => s + (v - mean) ** 2, 0) / cts.length);
+  const ucl    = mean + 3 * sigma;
+
+  document.getElementById('pcb-val-avg').textContent = mean.toFixed(1);
+  document.getElementById('pcb-val-ucl').textContent = ucl.toFixed(1);
+  document.getElementById('pcb-val-p85').textContent = stats.p85.toFixed(1);
+  document.getElementById('pcb-val-p95').textContent = stats.p95.toFixed(1);
+  document.getElementById('pcb-val-min').textContent = stats.min;
+  document.getElementById('pcb-val-max').textContent = stats.max;
+  document.getElementById('pcb-val-n').textContent   = stats.n;
+
+  const sorted = [...rawPCB].sort((a, b) => parseMDYYYY(a.closed) - parseMDYYYY(b.closed));
+  const points = sorted.map(d => ({x: parseMDYYYY(d.closed).getTime(), y: d.ct}));
+
+  const LINES = [
+    {id:'avg', label:'Śr.',  value:mean,       color:'#2ecc71', dash:[]   },
+    {id:'ucl', label:'UCL',  value:ucl,         color:'#e74c3c', dash:[]   },
+    {id:'p85', label:'P85',  value:stats.p85,   color:'#e67e22', dash:[5,4]},
+    {id:'p95', label:'P95',  value:stats.p95,   color:'#9b59b6', dash:[5,4]},
+  ];
+
+  const pcbHLines = makeHLinePlugin('pcbHLines', () =>
+    LINES.map(l => ({...l, visible: document.getElementById('pcb-chk-' + l.id).checked})));
+
+  chartInstances.pcb = new Chart(
+    document.getElementById('chart-pcb').getContext('2d'), {
+      type: 'scatter',
+      plugins: [pcbHLines],
+      data: {
+        datasets: [{
+          label: 'Czas realizacji',
+          data: points,
+          backgroundColor: '#4e9af1',
+          pointRadius: 6,
+          pointHoverRadius: 8,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        layout: {padding: {top: 12, right: 4, left: 4, bottom: 4}},
+        plugins: {
+          legend: {display: false},
+          tooltip: {
+            callbacks: {
+              label: ctx => ` Czas realizacji: ${ctx.parsed.y} dni`,
+            },
+          },
+        },
+        scales: {
+          x: {
+            type: 'time',
+            time: {unit:'week', tooltipFormat:'dd.MM.yyyy', displayFormats:{week:'dd MMM'}},
+            grid: {color:'#f3f4f6'},
+            border: {color:'#e5e7eb'},
+            ticks: {color:'#6b7280', font:{size:11}, maxRotation:30},
+            title: {display:true, text:'Data zamkni\u0119cia', color:'#6b7280', font:{size:12}, padding:{top:6}},
+          },
+          y: {
+            beginAtZero: true,
+            grid: {color:'#f3f4f6'},
+            border: {dash:[3,3], color:'#e5e7eb'},
+            ticks: {color:'#6b7280', font:{size:11}},
+            title: {display:true, text:'Czas realizacji (dni)', color:'#6b7280', font:{size:12}, padding:{bottom:6}},
+          },
+        },
+      },
+    });
+
+  ['avg','ucl','p85','p95'].forEach(id =>
+    document.getElementById('pcb-chk-' + id).addEventListener('change', () =>
+      chartInstances.pcb.update()));
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// 4. THROUGHPUT
+// ══════════════════════════════════════════════════════════════════════
+
+function initThroughput() {
+  const vals    = rawThroughput.map(d => d.v);
+  const total   = vals.reduce((s, v) => s + v, 0);
+  const maxVal  = Math.max(...vals);
+  const working = vals.filter(v => v > 0).length;
+  const avgAll  = total / vals.length;
+
+  document.getElementById('tp-val-total').textContent   = total;
+  document.getElementById('tp-val-avg').textContent     = avgAll.toFixed(2);
+  document.getElementById('tp-val-max').textContent     = maxVal;
+  document.getElementById('tp-val-working').textContent = working;
+  document.getElementById('tp-val-days').textContent    = vals.length;
+
+  const LINES = [
+    {id:'avg', label:'Śr.', value:avgAll, color:'#2ecc71', dash:[]},
+  ];
+
+  const tpHLines = makeHLinePlugin('tpHLines', () =>
+    LINES.map(l => ({...l, visible: document.getElementById('tp-chk-' + l.id).checked})));
+
+  const points = rawThroughput.map(d => ({x: parseDDMMYYYY(d.d).getTime(), y: d.v}));
+
+  chartInstances.throughput = new Chart(
+    document.getElementById('chart-throughput').getContext('2d'), {
+      type: 'bar',
+      plugins: [tpHLines],
+      data: {
+        datasets: [{
+          label: 'Przepustowo\u015b\u0107',
+          data: points,
+          backgroundColor: '#4e9af1',
+          borderRadius: 2,
+          barPercentage: 0.9,
+          categoryPercentage: 1.0,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        layout: {padding: {top: 12, right: 4, left: 4, bottom: 4}},
+        plugins: {
+          legend: {display: false},
+          tooltip: {
+            callbacks: {
+              title: ctx => ctx[0].label,
+              label: ctx => ` Przepustowo\u015b\u0107: ${ctx.parsed.y}`,
+            },
+          },
+        },
+        scales: {
+          x: {
+            type: 'time',
+            time: {unit:'week', tooltipFormat:'dd.MM.yyyy', displayFormats:{week:'dd MMM'}},
+            grid: {display: false},
+            border: {color:'#e5e7eb'},
+            ticks: {color:'#6b7280', font:{size:11}, maxRotation:30},
+            title: {display:true, text:'Data', color:'#6b7280', font:{size:12}, padding:{top:6}},
+          },
+          y: {
+            beginAtZero: true,
+            grid: {color:'#f3f4f6'},
+            border: {dash:[3,3], color:'#e5e7eb'},
+            ticks: {color:'#6b7280', font:{size:11}, stepSize:1},
+            title: {display:true, text:'Liczba zako\u0144czonych zada\u0144', color:'#6b7280', font:{size:12}, padding:{bottom:6}},
+          },
+        },
+      },
+    });
+
+  document.getElementById('tp-chk-avg').addEventListener('change', () =>
+    chartInstances.throughput.update());
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════════════════════════════
+chartInited.histogram = true;
+initHistogram();
 </script>
 </body>
 </html>
