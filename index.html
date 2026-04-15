@@ -1,1 +1,407 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Histogram Czasów Realizacji</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #f0f2f5;
+      color: #333;
+      padding: 28px 32px;
+      min-height: 100vh;
+    }
+
+    header { margin-bottom: 24px; }
+    header h1 { font-size: 1.55rem; font-weight: 700; color: #1a2233; }
+    header p { font-size: 0.9rem; color: #6b7280; margin-top: 4px; }
+
+    .card {
+      background: #fff;
+      border-radius: 14px;
+      padding: 28px;
+      box-shadow: 0 2px 16px rgba(0,0,0,.07);
+      display: flex;
+      gap: 28px;
+      align-items: flex-start;
+    }
+
+    .chart-wrap {
+      flex: 1;
+      min-width: 0;
+      position: relative;
+      height: 440px;
+    }
+
+    .sidebar {
+      width: 190px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
+    }
+
+    .section-title {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .07em;
+      color: #9ca3af;
+      margin-bottom: 10px;
+    }
+
+    .legend-row {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      margin-bottom: 9px;
+      font-size: 0.88rem;
+      color: #374151;
+    }
+    .legend-swatch {
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+      flex-shrink: 0;
+    }
+    .legend-count {
+      margin-left: auto;
+      font-size: 0.8rem;
+      color: #9ca3af;
+      font-weight: 600;
+    }
+
+    .ctrl-row {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      margin-bottom: 10px;
+      cursor: pointer;
+      font-size: 0.88rem;
+      color: #374151;
+      user-select: none;
+    }
+    .ctrl-row input[type="checkbox"] {
+      width: 15px;
+      height: 15px;
+      cursor: pointer;
+      accent-color: #4f46e5;
+    }
+    .ctrl-dash { width: 22px; flex-shrink: 0; }
+
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 5px 0;
+      border-bottom: 1px solid #f3f4f6;
+      font-size: 0.84rem;
+    }
+    .stat-row:last-child { border-bottom: none; }
+    .stat-label { color: #6b7280; }
+    .stat-val   { font-weight: 700; color: #1a2233; }
+
+    hr.divider { border: none; border-top: 1px solid #f3f4f6; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Histogram Czasów Realizacji</h1>
+  <p>Rozkład czasu realizacji według zadeklarowanego rozmiaru zadania</p>
+</header>
+
+<div class="card">
+  <div class="chart-wrap">
+    <canvas id="chart"></canvas>
+  </div>
+
+  <div class="sidebar">
+
+    <div>
+      <div class="section-title">Rozmiar</div>
+      <div class="legend-row">
+        <div class="legend-swatch" style="background:#4e9af1;"></div>
+        S – Mały
+        <span class="legend-count" id="cnt-s">–</span>
+      </div>
+      <div class="legend-row">
+        <div class="legend-swatch" style="background:#f5a623;"></div>
+        M – Średni
+        <span class="legend-count" id="cnt-m">–</span>
+      </div>
+      <div class="legend-row">
+        <div class="legend-swatch" style="background:#e8644d;"></div>
+        L – Duży
+        <span class="legend-count" id="cnt-l">–</span>
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div>
+      <div class="section-title">Linie statystyczne</div>
+
+      <label class="ctrl-row">
+        <input type="checkbox" id="chk-avg" checked>
+        <svg class="ctrl-dash" height="4"><line x1="0" y1="2" x2="22" y2="2" stroke="#2ecc71" stroke-width="2.5"/></svg>
+        Średnia
+      </label>
+
+      <label class="ctrl-row">
+        <input type="checkbox" id="chk-p50" checked>
+        <svg class="ctrl-dash" height="4"><line x1="0" y1="2" x2="22" y2="2" stroke="#3498db" stroke-width="2.5" stroke-dasharray="4 3"/></svg>
+        P50 (Mediana)
+      </label>
+
+      <label class="ctrl-row">
+        <input type="checkbox" id="chk-p85">
+        <svg class="ctrl-dash" height="4"><line x1="0" y1="2" x2="22" y2="2" stroke="#e67e22" stroke-width="2.5"/></svg>
+        P85
+      </label>
+
+      <label class="ctrl-row">
+        <input type="checkbox" id="chk-p95">
+        <svg class="ctrl-dash" height="4"><line x1="0" y1="2" x2="22" y2="2" stroke="#e74c3c" stroke-width="2.5"/></svg>
+        P95
+      </label>
+    </div>
+
+    <hr class="divider">
+
+    <div>
+      <div class="section-title">Statystyki (dni)</div>
+      <div class="stat-row"><span class="stat-label">Średnia</span><span class="stat-val" id="val-avg">–</span></div>
+      <div class="stat-row"><span class="stat-label">P50</span>    <span class="stat-val" id="val-p50">–</span></div>
+      <div class="stat-row"><span class="stat-label">P85</span>    <span class="stat-val" id="val-p85">–</span></div>
+      <div class="stat-row"><span class="stat-label">P95</span>    <span class="stat-val" id="val-p95">–</span></div>
+      <div class="stat-row"><span class="stat-label">Min</span>    <span class="stat-val" id="val-min">–</span></div>
+      <div class="stat-row"><span class="stat-label">Max</span>    <span class="stat-val" id="val-max">–</span></div>
+      <div class="stat-row"><span class="stat-label">Liczba</span> <span class="stat-val" id="val-n">–</span></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const raw = [
+  {s:'S',v:49},{s:'S',v:48},{s:'S',v:87},
+  {s:'M',v:57},{s:'M',v:148},{s:'S',v:53},
+  {s:'S',v:45},{s:'M',v:145},{s:'L',v:105},
+  {s:'S',v:5},{s:'L',v:163},{s:'S',v:43},
+  {s:'M',v:415},{s:'L',v:123},{s:'M',v:103},
+  {s:'L',v:104},{s:'L',v:302},{s:'L',v:158},
+  {s:'L',v:98},{s:'S',v:52},{s:'M',v:95},
+  {s:'S',v:70},{s:'M',v:95},{s:'M',v:101},
+  {s:'M',v:57},{s:'M',v:57},{s:'S',v:53},
+  {s:'L',v:137},{s:'S',v:73},{s:'M',v:60},
+  {s:'S',v:126},{s:'M',v:57},{s:'L',v:124},
+  {s:'M',v:75},{s:'M',v:89},{s:'S',v:44},
+];
+
+const BIN      = 25;
+const allVals  = raw.map(d => d.v);
+const minV     = Math.min(...allVals);
+const maxV     = Math.max(...allVals);
+const binStart = Math.floor(minV / BIN) * BIN;
+const numBins  = Math.ceil((maxV - binStart) / BIN);
+
+const bins = Array.from({length: numBins}, (_, i) => ({
+  lo: binStart + i * BIN,
+  hi: binStart + (i + 1) * BIN,
+  S: 0, M: 0, L: 0,
+}));
+
+raw.forEach(d => {
+  const idx = Math.min(Math.floor((d.v - binStart) / BIN), numBins - 1);
+  bins[idx][d.s]++;
+});
+
+const labels = bins.map(b => b.lo + '\u2013' + (b.hi - 1));
+
+/* statistics */
+const sorted = [...allVals].sort((a, b) => a - b);
+const N = sorted.length;
+
+function pct(arr, p) {
+  const idx = (p / 100) * (arr.length - 1);
+  const lo = Math.floor(idx), hi = Math.ceil(idx);
+  return lo === hi ? arr[lo] : arr[lo] + (arr[hi] - arr[lo]) * (idx - lo);
+}
+
+const avg = allVals.reduce((s, v) => s + v, 0) / N;
+const p50 = pct(sorted, 50);
+const p85 = pct(sorted, 85);
+const p95 = pct(sorted, 95);
+
+const cntS = raw.filter(d => d.s === 'S').length;
+const cntM = raw.filter(d => d.s === 'M').length;
+const cntL = raw.filter(d => d.s === 'L').length;
+
+document.getElementById('cnt-s').textContent = cntS;
+document.getElementById('cnt-m').textContent = cntM;
+document.getElementById('cnt-l').textContent = cntL;
+document.getElementById('val-avg').textContent = avg.toFixed(1);
+document.getElementById('val-p50').textContent = p50.toFixed(1);
+document.getElementById('val-p85').textContent = p85.toFixed(1);
+document.getElementById('val-p95').textContent = p95.toFixed(1);
+document.getElementById('val-min').textContent = minV;
+document.getElementById('val-max').textContent = maxV;
+document.getElementById('val-n').textContent  = N;
+
+/* stat lines */
+const LINES = [
+  {id:'avg', label:'Sr.',  value:avg, color:'#2ecc71', dash:[]     },
+  {id:'p50', label:'P50',  value:p50, color:'#3498db', dash:[5,4]  },
+  {id:'p85', label:'P85',  value:p85, color:'#e67e22', dash:[]     },
+  {id:'p95', label:'P95',  value:p95, color:'#e74c3c', dash:[]     },
+];
+
+function isChecked(id) { return document.getElementById('chk-' + id).checked; }
+
+/* convert cycle-time value to x pixel on categorical chart scale */
+function ctToXPx(xScale, value) {
+  const frac = (value - binStart) / BIN;
+  const lo   = Math.floor(frac);
+  const safeHi = Math.min(lo + 1, numBins - 1);
+  const t    = frac - lo;
+
+  const pxLo = xScale.getPixelForValue(lo);
+  const pxHi = xScale.getPixelForValue(safeHi);
+
+  const step = lo < numBins - 1
+    ? pxHi - pxLo
+    : pxLo - xScale.getPixelForValue(Math.max(lo - 1, 0));
+
+  return pxLo + (t - 0.5) * step;
+}
+
+/* plugin: draw vertical stat lines */
+const statLinesPlugin = {
+  id: 'statLines',
+  afterDraw(chart) {
+    const ctx    = chart.ctx;
+    const xScale = chart.scales.x;
+    const yScale = chart.scales.y;
+
+    const visible = LINES
+      .filter(l => isChecked(l.id))
+      .map(l => ({...l, xPx: ctToXPx(xScale, l.value)}))
+      .sort((a, b) => a.xPx - b.xPx);
+
+    /* assign label rows to avoid horizontal overlap */
+    const ROW_H  = 20;
+    const MIN_GAP = 60;
+    const rowLastX = [];
+    visible.forEach(line => {
+      let row = 0;
+      while (rowLastX[row] !== undefined && line.xPx - rowLastX[row] < MIN_GAP) row++;
+      rowLastX[row] = line.xPx;
+      line.labelRow = row;
+    });
+
+    visible.forEach(line => {
+      const x = line.xPx;
+
+      /* vertical line */
+      ctx.save();
+      ctx.beginPath();
+      ctx.strokeStyle = line.color;
+      ctx.lineWidth   = 2;
+      ctx.setLineDash(line.dash);
+      ctx.moveTo(x, yScale.top);
+      ctx.lineTo(x, yScale.bottom);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      /* label badge */
+      const text = line.label + ': ' + Math.round(line.value);
+      ctx.font = 'bold 11px "Segoe UI", sans-serif';
+      const tw = ctx.measureText(text).width;
+      const pad = 5, r = 4;
+      const bw = tw + pad * 2;
+      const bh = ROW_H - 2;
+      const bx = x - bw / 2;
+      const by = yScale.top - 8 - (line.labelRow + 1) * ROW_H;
+
+      ctx.beginPath();
+      ctx.moveTo(bx + r, by);
+      ctx.lineTo(bx + bw - r, by);
+      ctx.quadraticCurveTo(bx + bw, by, bx + bw, by + r);
+      ctx.lineTo(bx + bw, by + bh - r);
+      ctx.quadraticCurveTo(bx + bw, by + bh, bx + bw - r, by + bh);
+      ctx.lineTo(bx + r, by + bh);
+      ctx.quadraticCurveTo(bx, by + bh, bx, by + bh - r);
+      ctx.lineTo(bx, by + r);
+      ctx.quadraticCurveTo(bx, by, bx + r, by);
+      ctx.closePath();
+      ctx.fillStyle = line.color;
+      ctx.fill();
+
+      ctx.fillStyle    = '#fff';
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, x, by + bh / 2);
+
+      ctx.restore();
+    });
+  },
+};
+
+/* chart */
+const theChart = new Chart(document.getElementById('chart').getContext('2d'), {
+  type: 'bar',
+  plugins: [statLinesPlugin],
+  data: {
+    labels,
+    datasets: [
+      {label:'S \u2013 Ma\u0142y',   data:bins.map(b=>b.S), backgroundColor:'#4e9af1', borderRadius:3},
+      {label:'M \u2013 \u015arednii', data:bins.map(b=>b.M), backgroundColor:'#f5a623', borderRadius:3},
+      {label:'L \u2013 Du\u017cy',    data:bins.map(b=>b.L), backgroundColor:'#e8644d', borderRadius:3},
+    ],
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    layout: {padding: {top: 52, left: 4, right: 4, bottom: 4}},
+    plugins: {
+      legend: {display: false},
+      tooltip: {
+        callbacks: {
+          title: ctx => ctx[0].label + ' dni',
+          label: ctx => ' ' + ctx.dataset.label + ': ' + ctx.parsed.y,
+        },
+      },
+    },
+    scales: {
+      x: {
+        stacked: true,
+        grid: {display: false},
+        border: {color: '#e5e7eb'},
+        ticks: {color:'#6b7280', font:{size:11}, maxRotation:45, minRotation:45},
+        title: {display:true, text:'Czas realizacji (dni)', color:'#6b7280', font:{size:12}, padding:{top:6}},
+      },
+      y: {
+        stacked: true,
+        beginAtZero: true,
+        grid: {color:'#f3f4f6'},
+        border: {dash:[3,3], color:'#e5e7eb'},
+        ticks: {color:'#6b7280', font:{size:11}, stepSize:1},
+        title: {display:true, text:'Liczba zada\u0144', color:'#6b7280', font:{size:12}, padding:{bottom:6}},
+      },
+    },
+  },
+});
+
+['avg','p50','p85','p95'].forEach(id => {
+  document.getElementById('chk-' + id).addEventListener('change', () => {
+    /* trigger a re-render via a no-op dataset update */
+    theChart.update();
+  });
+});
+</script>
+</body>
+</html>
