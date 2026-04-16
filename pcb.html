@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PCB – X-Chart Czasu Realizacji</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      padding: 28px 32px;
+      min-height: 100vh;
+    }
+
+    header { margin-bottom: 24px; }
+    header h1 { font-size: 1.55rem; font-weight: 700; color: #f1f5f9; }
+    header p  { font-size: 0.9rem; color: #64748b; margin-top: 4px; }
+
+    .card {
+      background: #1e2230;
+      border-radius: 14px;
+      padding: 28px;
+      box-shadow: 0 4px 24px rgba(0,0,0,.4);
+      display: flex;
+      gap: 28px;
+      align-items: flex-start;
+    }
+
+    .chart-wrap {
+      flex: 1;
+      min-width: 0;
+      position: relative;
+      height: 460px;
+    }
+
+    .sidebar {
+      width: 200px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
+    }
+
+    .section-title {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .07em;
+      color: #475569;
+      margin-bottom: 10px;
+    }
+
+    .legend-row {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      margin-bottom: 9px;
+      font-size: 0.86rem;
+      color: #cbd5e1;
+    }
+    .legend-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .line-row {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      margin-bottom: 9px;
+      font-size: 0.86rem;
+      color: #cbd5e1;
+    }
+
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 5px 0;
+      border-bottom: 1px solid #2d3448;
+      font-size: 0.84rem;
+    }
+    .stat-row:last-child { border-bottom: none; }
+    .stat-label { color: #64748b; }
+    .stat-val   { font-weight: 700; color: #f1f5f9; }
+
+    hr.divider { border: none; border-top: 1px solid #2d3448; }
+
+    .badge-out {
+      display: inline-block;
+      background: #7f1d1d;
+      color: #fca5a5;
+      border-radius: 4px;
+      padding: 1px 7px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      margin-left: 6px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>PCB – X-Chart Czasu Realizacji</h1>
+  <p>Wykres kontrolny jednostkowych wartości (XmR) — dane: 3. PCB Czas realizacji.csv</p>
+</header>
+
+<div class="card">
+  <div class="chart-wrap">
+    <canvas id="chart"></canvas>
+  </div>
+
+  <div class="sidebar">
+
+    <div>
+      <div class="section-title">Legenda punktów</div>
+      <div class="legend-row">
+        <div class="legend-dot" style="background:#60a5fa;"></div>
+        W normie
+      </div>
+      <div class="legend-row">
+        <div class="legend-dot" style="background:#f87171;"></div>
+        Poza limitem (sygnał)
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div>
+      <div class="section-title">Linie kontrolne</div>
+      <div class="line-row">
+        <svg width="26" height="6"><line x1="0" y1="3" x2="26" y2="3" stroke="#facc15" stroke-width="2"/></svg>
+        CL (Średnia)
+      </div>
+      <div class="line-row">
+        <svg width="26" height="6"><line x1="0" y1="3" x2="26" y2="3" stroke="#f87171" stroke-width="2" stroke-dasharray="5 3"/></svg>
+        UNPL (górny)
+      </div>
+      <div class="line-row">
+        <svg width="26" height="6"><line x1="0" y1="3" x2="26" y2="3" stroke="#4ade80" stroke-width="2" stroke-dasharray="5 3"/></svg>
+        LNPL (dolny)
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div>
+      <div class="section-title">Statystyki (dni)</div>
+      <div class="stat-row"><span class="stat-label">Średnia (CL)</span>   <span class="stat-val" id="val-cl">–</span></div>
+      <div class="stat-row"><span class="stat-label">UNPL</span>           <span class="stat-val" id="val-unpl">–</span></div>
+      <div class="stat-row"><span class="stat-label">LNPL</span>           <span class="stat-val" id="val-lnpl">–</span></div>
+      <div class="stat-row"><span class="stat-label">Śr. zakres ruch.</span><span class="stat-val" id="val-mr">–</span></div>
+      <div class="stat-row"><span class="stat-label">Min</span>            <span class="stat-val" id="val-min">–</span></div>
+      <div class="stat-row"><span class="stat-label">Max</span>            <span class="stat-val" id="val-max">–</span></div>
+      <div class="stat-row"><span class="stat-label">Liczba</span>         <span class="stat-val" id="val-n">–</span></div>
+      <div class="stat-row"><span class="stat-label">Sygnały</span>        <span class="stat-val" id="val-out">–</span></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+/* ── dane ──────────────────────────────────────────────────────────── */
+const raw = [
+  {id:1,  closed:'05.01.2024', ct:38},
+  {id:2,  closed:'11.01.2024', ct:24},
+  {id:3,  closed:'16.01.2024', ct:14},
+  {id:4,  closed:'17.01.2024', ct:9},
+  {id:5,  closed:'22.01.2024', ct:4},
+  {id:6,  closed:'26.01.2024', ct:25},
+  {id:7,  closed:'29.01.2024', ct:19},
+  {id:8,  closed:'06.02.2024', ct:51},
+  {id:9,  closed:'12.02.2024', ct:48},
+  {id:10, closed:'15.02.2024', ct:15},
+  {id:11, closed:'17.02.2024', ct:22},
+  {id:12, closed:'18.02.2024', ct:42},
+  {id:13, closed:'19.02.2024', ct:17},
+  {id:14, closed:'21.02.2024', ct:7},
+  {id:15, closed:'28.02.2024', ct:5},
+  {id:16, closed:'12.03.2024', ct:20},
+  {id:17, closed:'14.03.2024', ct:63},
+  {id:18, closed:'19.03.2024', ct:6},
+  {id:19, closed:'20.03.2024', ct:56},
+  {id:20, closed:'22.03.2024', ct:24},
+  {id:21, closed:'22.03.2024', ct:22},
+  {id:22, closed:'26.03.2024', ct:50},
+  {id:23, closed:'27.03.2024', ct:8},
+  {id:24, closed:'28.03.2024', ct:2},
+  {id:25, closed:'29.03.2024', ct:3},
+  {id:26, closed:'30.03.2024', ct:8},
+  {id:27, closed:'01.04.2024', ct:36},
+  {id:28, closed:'02.04.2024', ct:27},
+  {id:29, closed:'09.04.2024', ct:29},
+  {id:30, closed:'09.04.2024', ct:20},
+];
+
+/* ── obliczenia X-chart ─────────────────────────────────────────────── */
+const vals   = raw.map(d => d.ct);
+const N      = vals.length;
+const labels = raw.map(d => '#' + d.id + '\n' + d.closed);
+
+const sumVals = vals.reduce((a, b) => a + b, 0);
+const CL      = sumVals / N;
+
+const movingRanges = [];
+for (let i = 1; i < N; i++) movingRanges.push(Math.abs(vals[i] - vals[i - 1]));
+const mRbar = movingRanges.reduce((a, b) => a + b, 0) / movingRanges.length;
+
+const D4    = 2.66; // d2* scaling factor for individual charts
+const UNPL  = CL + D4 * mRbar;
+const LNPL  = Math.max(0, CL - D4 * mRbar); // floored at 0
+
+const minV  = Math.min(...vals);
+const maxV  = Math.max(...vals);
+const outPoints = vals.filter(v => v > UNPL || v < LNPL).length;
+
+/* ── aktualizuj statystyki ──────────────────────────────────────────── */
+document.getElementById('val-cl').textContent   = CL.toFixed(1);
+document.getElementById('val-unpl').textContent = UNPL.toFixed(1);
+document.getElementById('val-lnpl').textContent = LNPL.toFixed(1);
+document.getElementById('val-mr').textContent   = mRbar.toFixed(1);
+document.getElementById('val-min').textContent  = minV;
+document.getElementById('val-max').textContent  = maxV;
+document.getElementById('val-n').textContent    = N;
+document.getElementById('val-out').textContent  = outPoints;
+
+/* ── kolory punktów ─────────────────────────────────────────────────── */
+const pointColors = vals.map(v =>
+  (v > UNPL || v < LNPL) ? '#f87171' : '#60a5fa'
+);
+const pointRadius = vals.map(() => 5);
+
+/* ── plugin: linie CL / UNPL / LNPL ────────────────────────────────── */
+const controlLinesPlugin = {
+  id: 'controlLines',
+  afterDraw(chart) {
+    const ctx    = chart.ctx;
+    const xScale = chart.scales.x;
+    const yScale = chart.scales.y;
+
+    const lines = [
+      {value: CL,   color: '#facc15', dash: [],     label: 'CL: '   + CL.toFixed(1)},
+      {value: UNPL, color: '#f87171', dash: [7, 4],  label: 'UNPL: ' + UNPL.toFixed(1)},
+      {value: LNPL, color: '#4ade80', dash: [7, 4],  label: 'LNPL: ' + LNPL.toFixed(1)},
+    ];
+
+    lines.forEach(line => {
+      const y = yScale.getPixelForValue(line.value);
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.strokeStyle = line.color;
+      ctx.lineWidth   = 1.8;
+      ctx.setLineDash(line.dash);
+      ctx.moveTo(xScale.left, y);
+      ctx.lineTo(xScale.right, y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      /* label on the right */
+      ctx.font         = 'bold 11px "Segoe UI", sans-serif';
+      ctx.fillStyle    = line.color;
+      ctx.textAlign    = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(line.label, xScale.right + 6, y);
+
+      ctx.restore();
+    });
+  },
+};
+
+/* ── wykres ─────────────────────────────────────────────────────────── */
+new Chart(document.getElementById('chart').getContext('2d'), {
+  type: 'line',
+  plugins: [controlLinesPlugin],
+  data: {
+    labels: raw.map(d => d.closed + ' (#' + d.id + ')'),
+    datasets: [{
+      label: 'Czas realizacji (dni)',
+      data: vals,
+      borderColor: '#60a5fa',
+      borderWidth: 1.6,
+      tension: 0,
+      pointBackgroundColor: pointColors,
+      pointBorderColor: pointColors,
+      pointRadius: pointRadius,
+      pointHoverRadius: 7,
+      fill: false,
+    }],
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    layout: {padding: {top: 10, right: 90, bottom: 4, left: 4}},
+    plugins: {
+      legend: {display: false},
+      tooltip: {
+        backgroundColor: '#1e2230',
+        borderColor: '#334155',
+        borderWidth: 1,
+        titleColor: '#f1f5f9',
+        bodyColor: '#94a3b8',
+        callbacks: {
+          title: ctx => 'Zamknięto: ' + ctx[0].label,
+          label: ctx => ' Czas realizacji: ' + ctx.parsed.y + ' dni',
+          afterLabel: ctx => {
+            const v = ctx.parsed.y;
+            if (v > UNPL) return ' ⚠ Powyżej UNPL';
+            if (v < LNPL) return ' ⚠ Poniżej LNPL';
+            return '';
+          },
+        },
+      },
+    },
+    scales: {
+      x: {
+        grid: {color: '#2d3448'},
+        border: {color: '#334155'},
+        ticks: {
+          color: '#64748b',
+          font: {size: 10},
+          maxRotation: 45,
+          minRotation: 45,
+        },
+        title: {display: true, text: 'Data zamknięcia', color: '#64748b', font: {size: 12}, padding: {top: 6}},
+      },
+      y: {
+        beginAtZero: true,
+        grid: {color: '#2d3448'},
+        border: {dash: [3, 3], color: '#334155'},
+        ticks: {color: '#64748b', font: {size: 11}},
+        title: {display: true, text: 'Czas realizacji (dni)', color: '#64748b', font: {size: 12}, padding: {bottom: 6}},
+      },
+    },
+  },
+});
+</script>
+</body>
+</html>
